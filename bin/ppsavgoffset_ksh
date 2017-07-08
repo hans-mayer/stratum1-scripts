@@ -1,0 +1,84 @@
+#!/usr/bin/ksh
+
+# Fri Aug 21 20:52:37 CEST 2015 - initial - mayer
+# Tue Jan 10 19:59:27 CET 2017
+# Mon Jan 30 19:46:02 CET 2017 - calculate deviation 
+# Tue Jan 31 20:21:57 CET 2017 - bugfix deviation 
+
+
+
+# read timestamp of a PPSDEVICE sources and calculates the average offset and deviation 
+
+export PATH PPSDEVICE DEBUG 
+
+
+usage(){
+  echo "usage: $0 [-d] pps-device " 1>&2 
+  exit 1 
+}
+
+if test "`id -u`" -ne 0 
+  then 
+    echo $0: you must be root 
+    exit 1 
+fi 
+
+
+if test $# -lt 1 
+  then 
+    usage $0 
+    exit 1 
+fi 
+
+
+case $1 in 
+  -d ) DEBUG=y ; shift ;;
+esac 
+
+if test $# -lt 1 
+  then 
+    usage $0 
+    exit 1 
+fi 
+
+PPSDEVICE=$1 
+if test ! -c $PPSDEVICE 
+      then 
+        echo $0: $PPSDEVICE not found 1>&2 
+        exit 1 
+fi
+
+# grep out only milliseconds the part behind . 
+ppstest $PPSDEVICE | egrep --line-buffered assert | stdbuf -o0 tr ',.' '  ' | \
+stdbuf -o0 gawk -v DEBUG=$DEBUG '
+  BEGIN {
+    SUM = 0.0 ; 
+    COUNT = 0 ; 
+    CNT4INT = 0 ;
+  }
+  { 
+    # here we get nano-seconds 
+    if ( $6 > 500000000 ) { $6 = $6 - 1000000000 } ; 
+    SUM += $6 ; 
+    COUNT++ ; 
+    if ( DEBUG == "y" )  printf ( "%1.1f\n" , $6 / 1000 ) ; 
+    myarrayint[CNT4INT] = $6 ;
+    CNT4INT++ ; 
+ 
+    if ( COUNT == 18 ) {
+      # printf ( "%s %d %s %12.1f %s %12.0f \n" , "count" , COUNT , "avg" , SUM / COUNT , "usec  sum: " , SUM ) ; 
+      exit 
+    } 
+  }
+  END {
+      DEVIATION = 0.0 ; 
+      AVG = SUM / COUNT ; 
+      for (i = 0 ; i < CNT4INT ; i++ )
+      	DEVIATION = DEVIATION + ( AVG - myarrayint[i] ) * ( AVG - myarrayint[i] ) ; 
+      DEVIATION /= CNT4INT ;
+      # print the value in milli-seconds - average and deviation 
+      # average and deviation must be integer for timesync_ksh
+      printf ( "%2.0f %2.0f\n" , AVG / 1000 , sqrt ( DEVIATION / 1000000 ) ) ; 
+  }' 
+
+

@@ -1,0 +1,66 @@
+#!/usr/bin/ksh
+
+# must be korn-shell 
+
+exit 0
+
+# Sun Jan 29 21:15:24 CET 2017 - mayer - initial 
+# Tue Jan 31 20:47:06 CET 2017 - mayer - bugfix multiple starts 
+# Sat Feb 11 20:16:52 CET 2017 - mayer - check after 3 houers 
+
+
+export PATH NTPPROC TIMESYNC PPSCLOCK NTPDSTART STARTIME NOW TDIFF REACH LOGGER 
+
+PATH=/opt/ntp/bin:$PATH:. 
+TIMESYNC=timesync_ksh
+PPSCLOCK=127.127.22.1
+NTPDSTART=/tmp/...ntpd_starttime
+LOGGER=/usr/bin/logger
+
+
+# $LOGGER -p user.debug "vfy_ntp_proc_ksh started " 
+
+# psg ntpd
+# root     13097 13094  0 07:09 pts/4    00:00:00 psg ntpd ksh /opt/ntp/bin/vfy_ntp_proc_ksh
+
+NTPPROC=`ps -ef | grep ntpd | grep -v grep | grep -v $0`
+if test -z "$NTPPROC" 
+  then 
+    # no ntp running 
+    $LOGGER -p user.debug "vfy_ntp_proc_ksh no ntp running " 
+    TIMESPROC=`ps -ef | grep $TIMESYNC | grep -v grep | grep -v $0`
+    if test -z "$TIMESPROC"
+      then 
+        $LOGGER -p user.debug "vfy_ntp_proc_ksh no $TIMESYNC running " 
+	# if $TIMESYNC starts with any messages we get an emtpy e-mail 
+        $TIMESYNC 2>&1 | mail hans@ma.yer.at
+      else 
+        $LOGGER -p user.debug "vfy_ntp_proc_ksh $TIMESYNC is currently running " 
+    fi
+  else 
+    : echo "$NTPPROC" | $LOGGER -p user.debug 
+    if test -f "$NTPDSTART" 
+      then 
+        STARTIME=`cat $NTPDSTART`
+        NOW=`date '+%s'`
+        TDIFF=$((NOW - STARTIME))
+        if test "$TDIFF" -gt 10800 
+          then 
+            : $LOGGER -p user.debug "vfy_ntp_proc_ksh ntpd start more than 3 hours $STARTIME $NOW $TDIFF "
+            REACH=`ntpq -pn | grep $PPSCLOCK | awk '{ print $7 }'`
+            if test "$REACH" -eq 0 
+              then 
+                $LOGGER -p user.debug "vfy_ntp_proc_ksh no PPS signal - killing ntpd " 
+                pkill ntpd 2>&1 | $LOGGER -p user.debug 
+                $TIMESYNC 
+              else 
+                : $LOGGER -p user.debug "vfy_ntp_proc_ksh ntpd running PPS reached $REACH " 
+            fi 
+          else 
+            $LOGGER -p user.debug "vfy_ntp_proc_ksh ntpd start less than 3 hours $STARTIME $NOW $TDIFF "
+        fi
+      else 
+        $LOGGER -p user.debug "vfy_ntp_proc_ksh $NTPDSTART not found "
+    fi
+fi 
+

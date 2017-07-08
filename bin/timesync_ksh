@@ -1,0 +1,286 @@
+#!/usr/bin/ksh
+
+# must be korn-shell 
+
+# 
+
+# Thu Jan 12 20:40:18 CET 2017 - mayer - initial 
+# Mon Jan 23 22:16:02 CET 2017 - mayer - calc difference 
+# Fri Jan 27 20:52:19 CET 2017 - mayer 
+# Sun Feb 12 17:13:05 CET 2017 - mayer - test loop 
+# Sat Mar 18 17:49:16 CET 2017 - mayer - check deviation 
+
+
+export REFCLOCK PPSDIFF POSDIFF PPSCLOCK REFPPS REFREM OLDOFFSETPPS OFFSETPPS OFFSETREF 
+export MAXLOOP RESULT NTPDATEEXIT NTPDATE PATH DEVIATION PTPAVAIL LOGGER NEWPANIC NTPQ NTPQRES 
+export DEVPPS STAT MAXDIFF CNTDEVIATION DBGLVL
+
+
+# ntpq must be configured to accept $HOME/.ntprc for root 
+
+if test -f /opt/ntp/etc/ntp_clock
+  then 
+    . /opt/ntp/etc/ntp_clock 
+  else 
+    echo $0: /opt/ntp/etc/ntp_clock not found  1>&2 
+fi 
+
+MAXLOOP=20
+NTPDATE=/usr/local/sbin/ntpdate
+AWK=gawk
+LOGGER=/usr/bin/logger
+DBGLVL=user.debug
+PTPAVAIL=1
+NEWPANIC=0.01
+NTPQ=/usr/local/bin/ntpq
+PTPD2=/usr/local/sbin/ptpd2
+PATH=$PATH:/usr/local/bin:/usr/local/sbin
+DEVPPS=/dev/pps1
+MAXDIFF=500
+
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` ========= start ========= "
+
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` ping -c 2 $REFCLOCK "
+ping -c 2 $REFCLOCK > /dev/null 2>&1 
+
+if test $? -ne 0
+  then
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` $REFCLOCK not reachable "
+    exit 1 
+fi
+
+correctpps(){
+  # PPSDIFF must be integer 
+  PPSDIFF=$1 
+  $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` correctpps PPSDIFF $PPSDIFF "
+  if test "$PPSDIFF" -gt 0 
+    then 
+      # insert pulses 
+      $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` wiringPin -i 27 $PPSDIFF "
+      wiringPin -i 27 $PPSDIFF 2>&1 | $LOGGER -p $DBGLVL 
+    else 
+      # delay 
+      POSDIFF=`echo $PPSDIFF | tr '-' ' '`
+      $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` wiringPin -d 22 $POSDIFF "
+      wiringPin -d 22 $POSDIFF 2>&1 | $LOGGER -p $DBGLVL 
+  fi
+}
+
+ppsverify_ksh $DEVPPS
+if test $? -ne 0
+  then
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` $DEVPPS not available "
+    exit 1
+fi
+
+# kill ntpd if running 
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` possible pkill ntpd and ptpd2"
+pkill ntpd 2>&1 | $LOGGER -p $DBGLVL
+pkill `basename $PTPD2` 2>&1 | $LOGGER -p $DBGLVL 
+pkill ppstest 2>&1 | $LOGGER -p $DBGLVL
+
+
+# fetch the time from the reference clock 
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` $NTPDATE -b -u $REFCLOCK "
+RESULT=`$NTPDATE -b -u $REFCLOCK 2>&1`
+NTPDATEEXIT=$? 
+$LOGGER -p $DBGLVL "`echo timesync_ksh:  $RESULT : $NTPDATEEXIT `"
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` sleep 16 "
+sleep 16 
+
+if test "$PTPAVAIL" -eq 1 
+  then
+    # a possible alternative methode is using ptp 
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` $PTPD2 --interface eth0 --domain 99 --slaveonly "
+    $PTPD2 --interface eth0 --domain 99 --slaveonly 2>&1 | $LOGGER -p $DBGLVL 
+    # $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` sleep 240 "
+    # this should be the time we have to wait until ptp syncs the system 
+    # sleep 240  # but we do a loop for monitoring 
+
+    # go into the loop at least one time 
+    # but if the offset is absolut greater than 1 ms = 1000 steps do it more often 
+    # and correct counter 
+
+    i=15
+    PPSDIFF=1001
+    while test "$PPSDIFF" -gt $MAXDIFF -o  "$PPSDIFF" -lt -$MAXDIFF
+      do
+        $LOGGER -p $DBGLVL "timesync_ksh:  a loop for monitoring - test phase 30 sec interval i: $i "
+        # -4 equals 24 times equal 12 minutes 
+        j=-4 
+        CNTDEVIATION=0 
+        while test $j -lt $MAXLOOP
+          do
+    	    # ppsavgoffset_ksh needs 18 seconds to run 
+            ppsavgoffset_ksh $DEVPPS | read PPSDIFF DEVIATION 
+            $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` PPSDIFF $PPSDIFF DEVIATION $DEVIATION j: $j "
+            j=$((j+1))
+            sleep 12 
+            # wenn die std-abweichung kleiner als 20 mitzaehlen 
+            if test "$DEVIATION" -lt 20 
+              then
+                CNTDEVIATION=$((CNTDEVIATION+1))
+              else 
+                CNTDEVIATION=0
+            fi
+            # wenn die std-abweichung 6 mal kleiner als 20 war abbruch beim uebernaechsten mal 
+            if test "$CNTDEVIATION" -eq 6
+              then
+                j=$MAXLOOP
+            fi
+          done
+        if test "$PPSDIFF" -gt $MAXDIFF -o  "$PPSDIFF" -lt -$MAXDIFF
+          then 
+            correctpps $PPSDIFF
+        fi
+        if test "$i" -eq "$MAXLOOP" 
+          then 
+            $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` loopcount exeeded - terminating "
+            exit 1 
+        fi
+        i=$((i + 1))
+      done
+fi
+
+# assume the time is now almost correct 
+# we have to adjust the frequency devider 
+# next line doesn't work with bash - only ksh works 
+ppsavgoffset_ksh $DEVPPS | read PPSDIFF DEVIATION 
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` PPSDIFF $PPSDIFF DEVIATION $DEVIATION "
+if test "$DEVIATION" -gt $MAXDIFF
+  then
+    j=10 
+    while test $j -lt $MAXLOOP
+      do
+        ppsavgoffset_ksh $DEVPPS | read PPSDIFF DEVIATION 
+        $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` PPSDIFF $PPSDIFF DEVIATION $DEVIATION "
+        j=$((j+1))
+        $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` sleep 45 : j $j "
+        if test "$DEVIATION" -lt $MAXDIFF
+          then 
+            break 
+        fi
+        sleep 45 
+      done
+fi
+
+correctpps $PPSDIFF 
+
+sleep 5 
+
+if test "$PTPAVAIL" -eq 1 
+  then
+    # a possible alternative methode is using ptp 
+    # kill ptp immediatelly before starting ntpd
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` pkill $PTPD2 "
+    pkill `basename $PTPD2` 2>&1 | $LOGGER -p $DBGLVL 
+fi
+    
+# now let's start the NTP daemon 
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` /usr/local/sbin/ntpd -p /run/ntpd.pid  "
+/usr/local/sbin/ntpd -p /run/ntpd.pid 2>&1 | $LOGGER -p $DBGLVL
+date '+%s' > /tmp/...ntpd_starttime
+
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` sleep 65 "
+sleep 65 
+
+# is NTPD still running ? - or did it stop for some reason 
+if test -n "`$NTPQ -pn 2>&1 | grep 'Connection refused'`" 
+  then 
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` ntpd not running - exit " 
+    exit 1 
+fi
+
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` sleep 180 "
+sleep 180 
+if test -n "`$NTPQ -pn 2>&1 | grep 'Connection refused'`" 
+  then 
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` ntpd not running - exit " 
+    exit 1 
+fi
+
+# nach ca 3 bis 7 minuten 
+# $NTPQ -pn | grep 192.168.241.10 | awk '{ print $9 * 1000 }' 
+# wenn wert groesser 0 dann 
+# wiringPin -i 27 33873 
+
+i=0 
+while test $i -lt $MAXLOOP 
+  do 
+    # check if we reached at least 8 periods 
+    REACH=`$NTPQ -pn 2> /dev/null | grep o$PPSCLOCK | $AWK '{ print $7 }'`
+    OLDOFFSETPPS=$OFFSETPPS
+    # no ipv6 otherwise grep will not work 
+    OFFSETPPS=`$NTPQ -pn 2> /dev/null | egrep "[xo ]$PPSCLOCK" | $AWK '{ print $9 }'`
+    OFFSETREF=`$NTPQ -pn 2> /dev/null | grep "$REFCLOCK " | $AWK '{ print $9 }'`
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` REACH $REACH OFFSETPPS $OFFSETPPS OFFSETREF $OFFSETREF i $i "
+    if test "$REACH" -eq 377 
+      then 
+        break 
+    fi
+    i=$((i+1)) 
+    sleep 32 
+  done 
+
+if test $i -eq $MAXLOOP 
+  then 
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` after $MAXLOOP times no clock found " 
+    $NTPQ -pn 2>&1 | $LOGGER -p $DBGLVL 
+    exit 1 
+fi    
+
+
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` sleep 32 "
+sleep 32 
+
+# wait until difference between current and previous offset is <= 5 micro seconds
+i=-10
+while test $i -lt $MAXLOOP
+  do
+    # we do not need this but just for information in debug log 
+    ppsavgoffset_ksh $DEVPPS | read PPSDIFF DEVIATION 
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` PPSDIFF $PPSDIFF DEVIATION $DEVIATION "
+
+    OLDOFFSETPPS=$OFFSETPPS
+    OFFSETPPS=`$NTPQ -pn 2> /dev/null | egrep "$PPSCLOCK" | $AWK '{ print $9 }'`
+    STAT=`$NTPQ -pn | grep "$PPSCLOCK" | cut -c1-1` 
+    $LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` OFFSETPPS $OFFSETPPS OLDOFFSETPPS $OLDOFFSETPPS i $i stat $STAT "
+    # calculate the absolut value of the difference of 
+    echo $OFFSETPPS $OLDOFFSETPPS | \
+	$AWK ' function absv(x){ return ( x >= 0 ) ? x : -x } ; { if ( absv( $1 - $2 ) > 0.005 )  { exit 1 } else exit 0 }'
+    # exit if abs value less than 5 /us 
+    if test $? -eq 0 
+      then 
+        break 
+    fi
+    i=$((i+1))
+    sleep 32
+  done
+
+
+# do the final fine adjust 
+NTPQRES=`$NTPQ -pn 2> /dev/null`
+echo "$NTPQRES" | egrep "$PPSCLOCK|$REFCLOCK" | $LOGGER -p $DBGLVL 
+REFPPS=`echo "$NTPQRES" | egrep $PPSCLOCK | $AWK '{ print $9 * 1000 }'`
+REFREM=`echo "$NTPQRES" | egrep $REFCLOCK | $AWK '{ print $9 * 1000 }'`
+PPSDIFF=`echo $REFREM $REFPPS | $AWK '{ print $1 -$2 }' `
+correctpps $PPSDIFF 
+
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` sleep 65 "
+sleep 65 
+# set the panic exit to lower values 0.01 means 10 ms 
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` :config tinker panic $NEWPANIC "
+echo ":config tinker panic $NEWPANIC" | $NTPQ 2>&1 | $LOGGER -p $DBGLVL 
+
+sleep 2
+$NTPQ -pn 2> /dev/null | egrep "$PPSCLOCK|$REFCLOCK" | $LOGGER -p $DBGLVL 
+
+# don't count on external server only, we want to be autonomous if the external one goes down 
+echo ':config server 127.127.1.1 maxpoll 4 prefer' | $NTPQ 2>&1 | $LOGGER -p $DBGLVL 
+echo ':config fudge 127.127.1.1 refid LPBK stratum 1' | $NTPQ 2>&1 | $LOGGER -p $DBGLVL 
+
+$LOGGER -p $DBGLVL "timesync_ksh:  `date +%s` terminated sucessfully "
+
+exit 0 
+
+
