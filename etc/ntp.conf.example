@@ -1,0 +1,35 @@
+# 2015-06-21 10:28:24 startup configuration file /etc/ntp.conf
+# saveconfigdir "/etc"
+driftfile "/var/lib/ntp/ntp.drift"
+leapfile "/etc/leap-seconds"
+logconfig =allall
+
+# https://www.eecis.udel.edu/~mills/ntp/html/monopt.html#statistics
+statsdir "/var/log/ntpstats/"
+statistics loopstats peerstats clockstats rawstats
+filegen loopstats file loopstats type day enable
+filegen peerstats file peerstats type day enable
+filegen clockstats file clockstats type day enable
+filegen rawstats file rawstats type day enable
+
+# keysdir "/etc/ntp/"
+keys "/etc/ntp/ntpkey"
+trustedkey # your keys 
+controlkey # your key 
+requestkey # your key
+#
+tinker panic 0.1
+#
+# Enabling PPS/ATOM support
+server 127.127.22.1 minpoll 4 maxpoll 4 noselect
+fudge 127.127.22.1 refid PPS2
+fudge 127.127.22.1 flag3 1 flag4 1  # enable kernel PLL/FLL clock discipline and clockstats 
+#
+server 192.168.241.10 minpoll 5 maxpoll 5 
+#
+restrict -6 default ignore
+restrict -4 default ignore
+restrict 127.0.0.1
+restrict ::1
+restrict 192.168.241.0 mask 255.255.255.0 nomodify
+#
