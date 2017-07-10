@@ -25,7 +25,7 @@ server 127.127.22.1 minpoll 4 maxpoll 4 noselect
 fudge 127.127.22.1 refid PPS2
 fudge 127.127.22.1 flag3 1 flag4 1  # enable kernel PLL/FLL clock discipline and clockstats 
 #
-server 192.168.241.10 minpoll 5 maxpoll 5 
+server 192.168.241.10 minpoll 5 maxpoll 5 prefer
 #
 restrict -6 default ignore
 restrict -4 default ignore
