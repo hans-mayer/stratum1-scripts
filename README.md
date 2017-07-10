@@ -10,3 +10,16 @@ Therefore subfolder "bin" is absolut "/opt/ntp/bin"
 ** Source from http://www.ntp.org/downloads.html 
 * Self compiled PTPDv2 
 
+### timesync_ksh
+
+### vfy_ntp_proc_ksh
+
+### ppsavgoffset_ksh
+
+### ppscalcdiff_ksh
+
+### ppsverify_ksh
+
+### mydrift
+
+
