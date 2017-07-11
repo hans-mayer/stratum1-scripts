@@ -8,7 +8,6 @@ Therefore subfolder "bin" should have the absolut path "/opt/ntp/bin"
 
 * Hardware and OS
 * Self compiled NTP in /usr/local <br>
-** Source from http://www.ntp.org/downloads.html
 * Self compiled PTPDv2
 
 ### OS
@@ -31,9 +30,16 @@ sudo make install
 </pre>
 
 This will install all necessary file below /usr/local.
- 
 
-### PTPDv2
+Make sure that "ntpq" doesn't ask for "key" and "password" if trying to modify the configuration. See "ntpq.c.patch" below.
+
+
+### ptpd2
+
+"ptp" protocol is used for the initial synchronization. It synchronize the system much faster than "ntpd". The reference server must be the master. The stratum-1 NTP server will be the client for short time. "ptpd2" is available from a git repository:
+
+    https://github.com/ptpd/ptpd.git
+
 
 
 ## Subfolder "bin"
@@ -81,3 +87,9 @@ The most important changes are: <br>
 * defining the key for authorization
 
 Make sure that "ntpd" is NOT started at the boot process. It will be started by "timesync_ksh". A second important step is that "ntpq" can configure the deamon.
+
+## subfolder "src"
+
+### ntpq.c.patch
+
+This is a patch for "ntpq.c". It prevents that you will be asked for a password configuring "ntpd". Of course you have to configure properly /etc/ntp.conf and /root/.ntprc

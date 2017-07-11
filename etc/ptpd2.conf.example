@@ -1,0 +1,16 @@
+
+
+# Wed Apr 12 21:53:56 CEST 2017 - mayer
+
+# http://manpages.ubuntu.com/manpages/xenial/man5/ptpd.conf.5.html
+# https://github.com/ptpd/ptpd/blob/master/src/ptpd2.conf.default-full
+
+ptpengine:interface = eth0
+ptpengine:preset = masteronly
+ptpengine:domain = 99
+ptpengine:ptp_timesource = GPS
+
+global:log_file = /var/adm/ptpd2_log
+clock:leap_seconds_file = /etc/leap-seconds 
+
+
