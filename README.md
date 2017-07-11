@@ -88,6 +88,24 @@ The most important changes are: <br>
 
 Make sure that "ntpd" is NOT started at the boot process. It will be started by "timesync_ksh". A second important step is that "ntpq" can configure the deamon.
 
+### ntp_clock.example
+
+This file will be sourced from the main script "timesync_ksh". It defines
+
+* the refrence server
+* the 1PPS source
+
+Location has to be /opt/ntp/etc/ntp_clock
+
+### ptpd2.conf.example
+
+This is the example for the ptp configurtion for the reference server. "ptpd2" should always run at the reference server. With option "-c" the configurtion file can passed as argument. For example
+
+    /usr/local/sbin/ptpd2 -c /opt/ntp/etc/ptpd2.conf
+
+The stratum-1 server doesn't need a ptpd configuration. All necessary arguments are given in the shell script.
+
+
 ## subfolder "src"
 
 ### ntpq.c.patch
